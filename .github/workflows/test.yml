@@ -1,0 +1,40 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install shfmt
+        run: sudo apt-get update && sudo apt-get install -y shfmt
+      - name: shellcheck
+        run: shellcheck -x scripts/*.sh skills/*/scripts/*.sh tests/*.sh
+      - name: shfmt
+        run: shfmt -d scripts skills tests
+      - name: Skills
+        run: scripts/lint-skills.sh
+
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure git for the tests
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+      - name: Test with coverage
+        run: tests/run.sh
