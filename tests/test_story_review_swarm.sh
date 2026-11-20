@@ -368,6 +368,28 @@ test_start_round_names_a_deleted_file_in_sections() {
   assert_contains "$out" "bible/outline.md: - # Outline"
 }
 
+# Git matches attribute patterns by case, so an uppercase extension must
+# still get the markdown driver, or the section is named by a prose line.
+# On a case-insensitive file system git sets core.ignoreCase and matches
+# either way; turning it off gives the case-sensitive matching Linux has.
+test_start_round_lists_sections_of_files_with_uppercase_extensions() {
+  local ext
+  git_q config core.ignoreCase false
+  for ext in MD Markdown; do
+    printf '# World\n\n## Magic\n\nBlood binds.\nIt costs.\n' >"$repo/bible/world.$ext"
+  done
+  git_q add -A
+  git_q commit -q -m world
+  for ext in MD Markdown; do
+    printf '# World\n\n## Magic\n\nBlood binds.\nIt costs years.\n' >"$repo/bible/world.$ext"
+  done
+  run_in_repo "$start"
+  assert_status 0
+  assert_contains "$out" "  bible/world.MD: ## Magic"
+  assert_contains "$out" "  bible/world.Markdown: ## Magic"
+  assert_not_contains "$out" "Blood binds"
+}
+
 test_start_round_lists_no_sections_for_files_that_are_not_markdown() {
   printf 'Notes\n' >"$repo/bible/notes.txt"
   run_in_repo "$start"

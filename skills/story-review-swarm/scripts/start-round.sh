@@ -103,7 +103,9 @@ default_branch() {
 # the index was last written.
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
-printf '*.md diff=markdown\n*.markdown diff=markdown\n' >"$scratch/attributes"
+# Attribute patterns match by case, so spell out every case of the
+# extensions the sections parser below accepts.
+printf '*.[mM][dD] diff=markdown\n*.[mM][aA][rR][kK][dD][oO][wW][nN] diff=markdown\n' >"$scratch/attributes"
 real_index="$(git rev-parse --git-path index)"
 if [ -f "$real_index" ]; then
   cp -p "$real_index" "$scratch/index"
