@@ -1,6 +1,6 @@
 ---
 name: code-review-swarm
-description: "Runs one round of a full code review with all seven code-review-* agents in parallel, then acts on the findings. Use before creating a pull request or pushing to one, or when asked for a full, thorough, multi-lens, all-lens or swarm review, or a review round. Otherwise a plain code review goes to code-review-sleuth, and a review with one named lens to that lens's agent. Not for changes to Claude instruction files (skills, agents, rules, CLAUDE.md): use claude-whisperer."
+description: "Runs one round of a full code review with all seven code-review-* agents in parallel, then acts on the findings. Use before creating a pull request or pushing to one, or when asked for a full, thorough, multi-lens, all-lens or swarm review, or a review round. Otherwise a plain code review goes to code-review-sleuth, and a review with one named lens to that lens's agent. Not for changes to Claude instruction files (skills, agents, rules, CLAUDE.md): use claude-whisperer. Not for a novel's story bible or manuscript: use story-review-swarm."
 ---
 
 # Code review swarm

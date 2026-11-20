@@ -23,7 +23,7 @@ Skills run their scripts with Bash. So that Claude and its subagents can run the
 
 Each rule names one script exactly. Avoid a wildcard in the path, such as `skills/*/scripts/*`: it would also allow anything reachable through it, including another skill's scripts or a path that steps out with `..`.
 
-This matters most for `code-review-swarm`: its reviewers run in the background and save their reports with a script, and they cannot answer a permission prompt.
+This matters most for `code-review-swarm` and `story-review-swarm`: their reviewers run in the background and save their reports with a script, and they cannot answer a permission prompt.
 
 ### Options
 
@@ -52,6 +52,7 @@ The script exits with status 1 when it skipped anything, so you can tell a parti
 | Skill | What it does |
 |---|---|
 | [`code-review-swarm`](skills/code-review-swarm/SKILL.md) | Runs a review round on a code change with all seven `code-review-*` agents from [claude-agents](https://github.com/stimothy/claude-agents) in parallel, then acts on what they find. Scripts write the diff and the change's intent to files, the reviewers save their reports to files, and one script collects them, so neither Claude nor the reviewers carry more context than they need. Meant for the moment before creating or pushing to a pull request; after fixes, Claude asks whether to re-review only what changed. Needs the claude-agents agents installed. |
+| [`story-review-swarm`](skills/story-review-swarm/SKILL.md) | Runs a review round on a change to a novel's story bible, outline or manuscript with the `story-review-*` agents from [claude-agents](https://github.com/stimothy/claude-agents) that the change calls for, in parallel. Claude chooses the lenses from the changed files and the Markdown sections the change touches, which a script lists without printing any changed text: continuity always, the others only when the change reaches what they check. The cold reader gets only the reader-facing files, never the diff or the bible. Canon decisions are left to the author. Needs the claude-agents agents installed. |
 
 ## Development
 
