@@ -13,7 +13,7 @@ END_OF_REPORT
 
 Saves the report on stdin as <round-dir>/reports/<lens>.md, replacing any
 earlier one, and prints a line with its finding counts. <reviewer> is a lens
-such as "sleuth" or the agent name such as "code-review-sleuth".
+such as "sleuth".
 EOF
 }
 

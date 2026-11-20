@@ -19,14 +19,16 @@ crs_need_value() {
   fi
 }
 
-# Prints the lens for a reviewer named "sleuth" or "code-review-sleuth", or
-# fails if it is not one of the seven.
+# Prints the lens if it is one of the seven, or fails.
 crs_lens() {
-  local lens="${1#code-review-}"
-  case " $crs_lenses " in
-    *" $lens "*) echo "$lens" ;;
-    *) crs_die "unknown reviewer: $1 (expected one of: $crs_lenses)" 2 ;;
-  esac
+  local lens
+  for lens in $crs_lenses; do
+    if [ "$1" = "$lens" ]; then
+      echo "$lens"
+      return 0
+    fi
+  done
+  crs_die "unknown reviewer: $1 (expected one of: $crs_lenses)" 2
 }
 
 # A round directory is one that start-round.sh made.
@@ -45,13 +47,20 @@ crs_meta() {
 }
 
 # Prints a report's finding counts as "total critical high medium low",
-# counted from its "- Severity:" lines.
+# counted from "- Severity: <level>" lines in any case. A line holding more
+# than the one level, such as a quoted format line, is not a finding.
 crs_count() {
   awk '
-    /^- Severity:[[:space:]]*critical/ { c++ }
-    /^- Severity:[[:space:]]*high/ { h++ }
-    /^- Severity:[[:space:]]*medium/ { m++ }
-    /^- Severity:[[:space:]]*low/ { l++ }
-    END { printf "%d %d %d %d %d\n", c + h + m + l, c, h, m, l }
+    {
+      line = tolower($0)
+      sub(/[[:space:]]+$/, "", line)
+      if (line !~ /^- severity:[[:space:]]*[a-z]+$/) next
+      sub(/^- severity:[[:space:]]*/, "", line)
+      n[line]++
+    }
+    END {
+      c = n["critical"] + 0; h = n["high"] + 0; m = n["medium"] + 0; l = n["low"] + 0
+      printf "%d %d %d %d %d\n", c + h + m + l, c, h, m, l
+    }
   ' "$1"
 }

@@ -14,12 +14,14 @@ scripts/install.sh
 
 This symlinks every skill directory in `skills/` into `~/.claude/skills/` (or `$CLAUDE_CONFIG_DIR/skills/` if you have set that variable). Because the whole directory is linked, a skill's scripts run from this clone whichever project you are working in, and `git pull` updates them without a reinstall. Run the script again after a pull that adds new skills.
 
-Skills run their scripts with Bash. So that Claude and its subagents can run them without a permission prompt each time, add these to `permissions.allow` in `~/.claude/settings.json` (the installer prints the exact lines). A script may be named by its path through `~/.claude/skills` or in the clone, so allow both:
+Skills run their scripts with Bash. So that Claude and its subagents can run them without a permission prompt each time, add the rules the installer prints to `permissions.allow` in `~/.claude/settings.json`. There is one rule per script, for its path through `~/.claude/skills` and for its path in the clone, since Claude may name it either way. For example:
 
 ```json
-"Bash(/Users/you/.claude/skills/*/scripts/*)",
-"Bash(/Users/you/path/to/claude-skills/skills/*/scripts/*)"
+"Bash(/Users/you/.claude/skills/code-review-swarm/scripts/save-report.sh *)",
+"Bash(/Users/you/path/to/claude-skills/skills/code-review-swarm/scripts/save-report.sh *)"
 ```
+
+Each rule names one script exactly. Avoid a wildcard in the path, such as `skills/*/scripts/*`: it would also allow anything reachable through it, including another skill's scripts or a path that steps out with `..`.
 
 This matters most for `code-review-swarm`: its reviewers run in the background and save their reports with a script, and they cannot answer a permission prompt.
 

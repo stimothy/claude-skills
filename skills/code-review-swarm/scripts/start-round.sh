@@ -8,7 +8,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: start-round.sh [--base <ref>] [--since <round-dir>] [--root <dir>]
+Usage: start-round.sh [--base <ref> | --since <round-dir>]
 
 Run from inside the repository under review. Snapshots the working tree -
 commits, staged and unstaged edits, and untracked files that are not ignored -
@@ -20,9 +20,9 @@ into a new round directory.
   --since <round-dir>  Diff from the snapshot an earlier round took, so a
                        re-review reads only what changed since that round.
                        The new round goes next to it.
-  --root <dir>         Where round directories go. Default:
-                       $CLAUDE_JOB_DIR/tmp/code-review-swarm, else a new
-                       temporary directory.
+
+Rounds go in $CLAUDE_JOB_DIR/tmp/code-review-swarm, or in a new temporary
+directory when CLAUDE_JOB_DIR is not set.
 
 Prints the round directory, the diff's path and a summary of the change.
 Exits 3 when there is nothing to review.
@@ -49,11 +49,6 @@ while [ $# -gt 0 ]; do
       since="$2"
       shift
       ;;
-    --root)
-      crs_need_value "$1" $#
-      root="$2"
-      shift
-      ;;
     -h | --help)
       usage
       exit 0
@@ -75,14 +70,19 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 top="$(git rev-parse --show-toplevel)"
 
+# The diff is read as a plain patch of the whole repository, so the user's
+# diff settings - an external diff tool, colour, other path prefixes, diffs
+# relative to the current directory - must not apply.
+plain_diff() {
+  git diff --no-ext-diff --no-color --no-relative --src-prefix=a/ --dst-prefix=b/ "$@"
+}
+
 # Prints the default branch: origin/HEAD, else main or master, else nothing.
+# An origin/HEAD that points at a branch that no longer exists is skipped.
 default_branch() {
-  local ref
-  if ref="$(git symbolic-ref --short -q refs/remotes/origin/HEAD)"; then
-    echo "$ref"
-    return 0
-  fi
-  for ref in main master origin/main origin/master; do
+  local ref origin_head
+  origin_head="$(git symbolic-ref --short -q refs/remotes/origin/HEAD || true)"
+  for ref in $origin_head main master origin/main origin/master; do
     if git rev-parse --verify -q "$ref^{commit}" >/dev/null; then
       echo "$ref"
       return 0
@@ -112,9 +112,7 @@ fi
 if [ -n "$since" ]; then
   base="$(crs_meta "$since" snapshot)"
   base_desc="snapshot of $(basename "$since")"
-  if [ -z "$root" ]; then
-    root="$(dirname "$since")"
-  fi
+  root="$(dirname "$since")"
 elif [ -z "$head" ]; then
   base="$(git hash-object -t tree /dev/null)"
   base_desc="empty tree (the repository has no commits)"
@@ -127,23 +125,24 @@ else
     base_desc="HEAD (no default branch found, so only uncommitted work)"
   elif ! git rev-parse --verify -q "$base_ref^{commit}" >/dev/null; then
     crs_die "unknown ref: $base_ref"
+  elif ! base="$(git merge-base "$base_ref" HEAD)"; then
+    crs_die "no common history between $base_ref and HEAD; pass --base <ref>"
   else
-    base="$(git merge-base "$base_ref" HEAD)"
     base_desc="merge base of $base_ref and HEAD ($(git rev-parse --short "$base"))"
   fi
 fi
 
-if git diff --quiet "$base" "$snapshot"; then
+if plain_diff --quiet "$base" "$snapshot"; then
   echo "nothing to review: no change from the $base_desc"
   exit 3
 fi
 
-if [ -z "$root" ]; then
-  if [ -n "${CLAUDE_JOB_DIR:-}" ]; then
-    root="$CLAUDE_JOB_DIR/tmp/code-review-swarm"
-  else
-    root="$(mktemp -d "${TMPDIR:-/tmp}/code-review-swarm.XXXXXX")"
-  fi
+if [ -n "$root" ]; then
+  : # --since put the new round next to the old one.
+elif [ -n "${CLAUDE_JOB_DIR:-}" ]; then
+  root="$CLAUDE_JOB_DIR/tmp/code-review-swarm"
+else
+  root="$(mktemp -d "${TMPDIR:-/tmp}/code-review-swarm.XXXXXX")"
 fi
 mkdir -p "$root"
 root="$(cd "$root" && pwd -P)"
@@ -154,7 +153,7 @@ done
 round="$root/round-$n"
 mkdir -p "$round/reports"
 
-git diff -U20 --find-renames "$base" "$snapshot" >"$round/diff.patch"
+plain_diff -U20 --find-renames "$base" "$snapshot" >"$round/diff.patch"
 {
   printf 'repo\t%s\n' "$top"
   printf 'head\t%s\n' "$head"
@@ -166,9 +165,9 @@ git diff -U20 --find-renames "$base" "$snapshot" >"$round/diff.patch"
 echo "round: $round"
 echo "diff: $round/diff.patch"
 echo "base: $base_desc"
-echo "change:$(git diff --shortstat "$base" "$snapshot")"
+echo "change:$(plain_diff --shortstat "$base" "$snapshot")"
 echo "files:"
-git diff --name-status --find-renames "$base" "$snapshot" >"$scratch/files"
+plain_diff --name-status --find-renames "$base" "$snapshot" >"$scratch/files"
 head -n 40 "$scratch/files" | sed 's/^/  /'
 total="$(wc -l <"$scratch/files" | tr -d ' ')"
 if [ "$total" -gt 40 ]; then

@@ -81,6 +81,23 @@ test_lint_fails_on_a_missing_script() {
   assert_contains "$out" "good: refers to scripts/gone.sh, which does not exist"
 }
 
+test_lint_ignores_punctuation_after_a_reference() {
+  # shellcheck disable=SC2016
+  printf 'Then run ${CLAUDE_SKILL_DIR}/scripts/run.sh.\n' >>"$skills/good/SKILL.md"
+  run_script "$lint" "$skills"
+  assert_status 0
+}
+
+test_lint_follows_a_reference_into_a_subdirectory() {
+  mkdir "$skills/good/scripts/sub"
+  printf '#!/bin/sh\n' >"$skills/good/scripts/sub/deep.sh"
+  chmod +x "$skills/good/scripts/sub/deep.sh"
+  # shellcheck disable=SC2016
+  printf 'Or ${CLAUDE_SKILL_DIR}/scripts/sub/deep.sh\n' >>"$skills/good/SKILL.md"
+  run_script "$lint" "$skills"
+  assert_status 0
+}
+
 test_lint_fails_on_a_script_that_is_not_executable() {
   chmod -x "$skills/good/scripts/run.sh"
   run_script "$lint" "$skills"

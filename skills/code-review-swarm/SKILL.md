@@ -57,7 +57,7 @@ Run every command from inside the repository under review.
 
 4. **Spawn all seven in one message, in the background.** For each heading, call the Agent tool with `subagent_type: code-review-<lens>` and the text under the heading as the whole prompt, unchanged. Add nothing: the skeptic must see only the diff, the others read the context file, and the brief already tells each one to save its report to a file and reply with one line, because long replies get cut off and re-asking costs more.
 
-   Reviewers can save only if Bash is allowed to run this skill's scripts, since background agents cannot answer a permission prompt. The claude-skills installer prints the `permissions.allow` rule to add. If reviewers report that `save-report.sh` was denied, pass that on to the user.
+   Reviewers can save only if Bash is allowed to run this skill's scripts, since background agents cannot answer a permission prompt. The claude-skills installer prints the exact `permissions.allow` rules to add, one per script. If reviewers report that `save-report.sh` was denied, pass that on to the user.
 
 5. **Wait for all seven to finish.** Do not poll or collect before then. Until all seven have finished, do not edit files, commit or push: reviewers read the working tree as the new side of the diff, so a change made now shows them code the diff does not match. Each should reply with one `saved code-review-<lens>: ...` line.
    - If one replied with its report instead of saving it, that reply is the lens's report; leave it where it is. Do not pipe it through `save-report.sh`, which would print it into your context a second time. Collect the others with `--partial`.

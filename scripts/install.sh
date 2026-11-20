@@ -80,19 +80,26 @@ exists() {
   [ -e "$1" ] || [ -L "$1" ]
 }
 
-# A checksum of a directory's file names and contents.
+# A checksum of a directory's file names, contents and executable bits, and
+# of any symlinks in it and their targets.
 checksum() {
   (
     cd "$1"
-    find . -type f | LC_ALL=C sort | while IFS= read -r f; do
-      printf '%s %s\n' "$f" "$(cksum <"$f")"
+    find . \( -type f -o -type l \) | LC_ALL=C sort | while IFS= read -r f; do
+      if [ -L "$f" ]; then
+        printf '%s l %s\n' "$f" "$(readlink "$f")"
+      elif [ -x "$f" ]; then
+        printf '%s x %s\n' "$f" "$(cksum <"$f")"
+      else
+        printf '%s - %s\n' "$f" "$(cksum <"$f")"
+      fi
     done
   ) | cksum
 }
 
-# True if two directories hold the same files with the same contents.
+# True if two directories hold the same files, contents and executable bits.
 same_tree() {
-  diff -r -q "$1" "$2" >/dev/null 2>&1
+  [ -n "$1" ] && [ -d "$1" ] && [ -d "$2" ] && [ "$(checksum "$1")" = "$(checksum "$2")" ]
 }
 
 # Prints the manifest entry for a skill as "kind<TAB>value", or nothing.
@@ -207,6 +214,56 @@ install_skill() {
   done_count=$((done_count + 1))
 }
 
+# Prints the names the manifest records whose skill is no longer in this
+# repository, because it was removed or renamed.
+orphans() {
+  local name
+  if [ -f "$manifest" ]; then
+    awk -F'\t' '{ print $1 }' "$manifest" | while IFS= read -r name; do
+      if [ ! -f "$src_dir/$name/SKILL.md" ]; then
+        echo "$name"
+      fi
+    done
+  fi
+}
+
+# Removes an install of a skill that is no longer in this repository, if it
+# is still exactly what this script installed.
+remove_orphan() {
+  local name="$1" dest="$dest_dir/$1"
+  if ! exists "$dest"; then
+    forget "$name"
+    return 0
+  fi
+  if is_ours "" "$dest" "$name"; then
+    rm -rf "$dest"
+    forget "$name"
+    echo "  removed  $name (no longer in this repository)"
+    if [ "$action" = "uninstall" ]; then
+      done_count=$((done_count + 1))
+    fi
+  else
+    skip "$name" "no longer in this repository, but changed since it was installed"
+  fi
+}
+
+# Prints a permission rule for each script the installed skills can run, by
+# its path through the skills directory and in this clone.
+allow_rules() {
+  local src name script
+  for src in "${skills[@]}"; do
+    name="$(basename "$src")"
+    if [ ! -d "$src/scripts" ]; then
+      continue
+    fi
+    find "$src/scripts" -type f | LC_ALL=C sort | while IFS= read -r script; do
+      if [ -x "$script" ]; then
+        printf '"Bash(%s *)"\n' "$dest_dir/$name/${script#"$src"/}" "$script"
+      fi
+    done
+  done
+}
+
 uninstall_skill() {
   local src="$1" name dest
   name="$(basename "$src")"
@@ -232,20 +289,29 @@ if [ "$action" = "install" ]; then
   for src in "${skills[@]}"; do
     install_skill "$src"
   done
+  while IFS= read -r name; do
+    remove_orphan "$name"
+  done < <(orphans)
   echo "Installed $done_count, skipped $skipped_count."
-  echo
-  echo "Skills run their scripts with Bash. To let Claude and its subagents run"
-  echo "them without a permission prompt, add these to permissions.allow in"
-  echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json. A script may be named"
-  echo "by its path through the skills directory or in this clone, so allow both:"
-  echo "  \"Bash($dest_dir/*/scripts/*)\","
-  echo "  \"Bash($src_dir/*/scripts/*)\""
+  rules="$(allow_rules)"
+  if [ -n "$rules" ]; then
+    echo
+    echo "Skills run their scripts with Bash. To let Claude and its subagents run"
+    echo "them without a permission prompt, add these to permissions.allow in"
+    echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json. A script may be named"
+    echo "by its path through the skills directory or in this clone, so each is"
+    echo "allowed by both:"
+    printf '%s\n' "$rules" | sed -e 's/^/  /' -e '$!s/$/,/'
+  fi
 else
   echo "Removing skills from $dest_dir"
   if [ -d "$dest_dir" ]; then
     for src in "${skills[@]}"; do
       uninstall_skill "$src"
     done
+    while IFS= read -r name; do
+      remove_orphan "$name"
+    done < <(orphans)
   fi
   echo "Removed $done_count, skipped $skipped_count."
 fi

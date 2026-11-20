@@ -33,8 +33,6 @@ skills_dir="${1:-$script_dir/../skills}"
 
 problems=0
 checked=0
-scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT
 
 problem() {
   echo "  $1"
@@ -77,15 +75,15 @@ check_skill() {
     problem "$name: no description"
   fi
 
-  # The pattern matches the literal text ${CLAUDE_SKILL_DIR}.
+  # Each reference, with any sentence punctuation after it dropped. The
+  # pattern matches the literal text ${CLAUDE_SKILL_DIR}.
   # shellcheck disable=SC2016
-  grep -o '\${CLAUDE_SKILL_DIR}/scripts/[A-Za-z0-9._-]*' "$skill_md" | sort -u >"$scratch/refs" || true
   while IFS= read -r ref; do
     ref="${ref#\$\{CLAUDE_SKILL_DIR\}/}"
     if [ ! -f "$dir/$ref" ]; then
       problem "$name: refers to $ref, which does not exist"
     fi
-  done <"$scratch/refs"
+  done < <(grep -o '\${CLAUDE_SKILL_DIR}/scripts/[A-Za-z0-9._/-]*[A-Za-z0-9_]' "$skill_md" | sort -u)
 
   for script in "$dir"/scripts/*; do
     if [ -f "$script" ] && [ "$(head -c 2 "$script")" = "#!" ] && [ ! -x "$script" ]; then

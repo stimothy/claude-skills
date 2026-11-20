@@ -62,19 +62,22 @@ executable_lines() {
       if ($0 ~ /\\$/) continued = 1
       print NR
     }
-  ' "$1" | sort -n
+  ' "$1"
 }
 
 coverage_failed=0
 for script in "$repo_root"/scripts/*.sh "$repo_root"/skills/*/scripts/*.sh; do
   [ -f "$script" ] || continue
   rel="${script#"$repo_root"/}"
-  executable_lines "$script" >"$scratch/executable"
+  # comm needs both lists in the same text order, not numeric order.
+  executable_lines "$script" | LC_ALL=C sort -u >"$scratch/executable"
   grep -F "COV:$rel:" "$COV_TRACE" |
     sed -E 's/^\++COV:[^:]*:([0-9]+): .*/\1/' |
-    sort -n | uniq >"$scratch/executed"
+    LC_ALL=C sort -u >"$scratch/executed"
   total="$(grep -c . "$scratch/executable")"
   if [ "$total" -eq 0 ]; then
+    echo "coverage: $rel has no executable lines that the measure recognises"
+    coverage_failed=1
     continue
   fi
   missed_lines="$(comm -23 "$scratch/executable" "$scratch/executed" | sort -n | tr '\n' ' ')"

@@ -87,11 +87,19 @@ test_ignores_entries_that_are_not_skills() {
 }
 
 # Claude may name a script by its path through the link or in the clone, so
-# both need allowing.
-test_prints_how_to_allow_skill_scripts() {
+# both need allowing. Each rule names one script exactly: a wildcard in the
+# path would also allow anything reachable through it.
+test_prints_exact_rules_to_allow_skill_scripts() {
   run_install
-  assert_contains "$out" "\"Bash($dest/*/scripts/*)\","
-  assert_contains "$out" "\"Bash($fixture/skills/*/scripts/*)\""
+  assert_contains "$out" "\"Bash($dest/alpha/scripts/hi.sh *)\","
+  assert_contains "$out" "\"Bash($fixture/skills/alpha/scripts/hi.sh *)\""
+  assert_not_contains "$out" "/*/"
+}
+
+test_rules_leave_out_sourced_libraries() {
+  printf '# shellcheck shell=bash\n' >"$fixture/skills/alpha/scripts/lib.sh"
+  run_install
+  assert_not_contains "$out" "lib.sh"
 }
 
 # --- Installing copies -------------------------------------------------------
@@ -138,6 +146,17 @@ test_copy_drops_files_removed_from_the_source() {
   assert_absent "$dest/alpha/scripts/hi.sh"
 }
 
+test_copy_is_updated_when_only_a_mode_changes() {
+  printf '#!/bin/sh\n' >"$fixture/skills/alpha/scripts/later.sh"
+  run_install --copy
+  chmod +x "$fixture/skills/alpha/scripts/later.sh"
+  run_install --copy
+  assert_status 0
+  if [ ! -x "$dest/alpha/scripts/later.sh" ]; then
+    fail "expected the copy of later.sh to be executable"
+  fi
+}
+
 test_copy_is_uninstalled_after_the_source_changes() {
   run_install --copy
   printf 'alpha v2\n' >"$fixture/skills/alpha/SKILL.md"
@@ -161,6 +180,14 @@ test_edited_copy_is_not_uninstalled() {
   run_install --uninstall
   assert_status 1
   assert_file "$dest/alpha/mine.txt"
+}
+
+test_copy_with_an_added_symlink_is_not_uninstalled() {
+  run_install --copy
+  ln -s "$work/anywhere" "$dest/alpha/custom-link"
+  run_install --uninstall
+  assert_status 1
+  assert_link_to "$dest/alpha/custom-link" "$work/anywhere"
 }
 
 test_force_replaces_an_edited_copy() {
@@ -230,6 +257,56 @@ test_own_dangling_symlink_is_repaired_after_the_repository_moves() {
   run_install
   assert_status 0
   assert_link_to "$dest/alpha" "$work/moved/skills/alpha"
+}
+
+# --- Skills removed from the repository --------------------------------------
+
+test_install_removes_a_link_to_a_skill_that_was_removed() {
+  run_install
+  rm -rf "$fixture/skills/beta"
+  run_install
+  assert_status 0
+  assert_absent "$dest/beta"
+  assert_contains "$out" "removed  beta (no longer in this repository)"
+  assert_not_contains "$(cat "$manifest")" "beta"
+}
+
+test_install_removes_a_copy_of_a_skill_that_was_renamed() {
+  run_install --copy
+  mv "$fixture/skills/beta" "$fixture/skills/gamma"
+  run_install --copy
+  assert_status 0
+  assert_absent "$dest/beta"
+  assert_dir_copy "$dest/gamma"
+}
+
+test_install_keeps_an_edited_copy_of_a_removed_skill() {
+  run_install --copy
+  printf 'mine\n' >"$dest/beta/SKILL.md"
+  rm -rf "$fixture/skills/beta"
+  run_install --copy
+  assert_status 1
+  assert_content "$dest/beta/SKILL.md" "mine"
+  assert_contains "$err" "skipped  beta"
+}
+
+test_install_forgets_a_removed_skill_that_is_already_gone() {
+  run_install
+  rm -rf "$fixture/skills/beta"
+  rm "$dest/beta"
+  run_install
+  assert_status 0
+  assert_not_contains "$(cat "$manifest")" "beta"
+}
+
+test_uninstall_removes_a_skill_that_was_removed() {
+  run_install
+  rm -rf "$fixture/skills/beta"
+  run_install --uninstall
+  assert_status 0
+  assert_absent "$dest/beta"
+  assert_absent "$dest/alpha"
+  assert_absent "$manifest"
 }
 
 # --- Uninstalling ------------------------------------------------------------
