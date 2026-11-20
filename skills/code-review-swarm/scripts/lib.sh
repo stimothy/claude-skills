@@ -47,16 +47,17 @@ crs_meta() {
 }
 
 # Prints a report's finding counts as "total critical high medium low",
-# counted from "- Severity: <level>" lines in any case. A line holding more
-# than the one level, such as a quoted format line, is not a finding.
+# counted from "- Severity:" lines in any case, by the first word after it.
+# A line that lists levels with "|", such as a quoted format line, is not a
+# finding.
 crs_count() {
   awk '
     {
       line = tolower($0)
-      sub(/[[:space:]]+$/, "", line)
-      if (line !~ /^- severity:[[:space:]]*[a-z]+$/) next
-      sub(/^- severity:[[:space:]]*/, "", line)
-      n[line]++
+      if (line !~ /^- severity:/ || index(line, "|")) next
+      sub(/^- severity:[^a-z]*/, "", line)
+      match(line, /^[a-z]+/)
+      n[substr(line, 1, RLENGTH)]++
     }
     END {
       c = n["critical"] + 0; h = n["high"] + 0; m = n["medium"] + 0; l = n["low"] + 0

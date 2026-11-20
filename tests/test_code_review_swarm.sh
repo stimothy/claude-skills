@@ -354,6 +354,16 @@ test_start_round_since_reads_only_what_changed_after_that_round() {
   assert_not_contains "$(cat "$rounds/round-2/diff.patch")" "+TWO"
 }
 
+test_start_round_since_puts_the_new_round_next_to_the_old_one() {
+  printf 'one\nTWO\nthree\n' >"$repo/app.txt"
+  run_in_repo "$start"
+  printf 'one\nTWO\nTHREE\n' >"$repo/app.txt"
+  CLAUDE_JOB_DIR="$work/other-job" run_in_repo "$start" --since "$rounds/round-1"
+  assert_status 0
+  assert_contains "$out" "round: $rounds/round-2"
+  assert_absent "$work/other-job"
+}
+
 test_start_round_since_with_no_new_change_has_nothing_to_review() {
   printf 'one\nTWO\nthree\n' >"$repo/app.txt"
   run_in_repo "$start"
@@ -579,6 +589,17 @@ test_briefs_use_an_unguessable_delimiter_that_opens_and_closes() {
     fail "no random delimiter in: $brief"
   fi
   assert_contains "$brief" "$(printf '\n%s\n' "$delim")"
+  if [ "$(brief_for pedant | grep -c "$delim")" != "0" ]; then
+    fail "expected each brief to get its own delimiter"
+  fi
+}
+
+test_briefs_quote_a_script_path_with_spaces() {
+  with_context
+  ln -s "$skill_scripts" "$work/skill dir"
+  run_script "$work/skill dir/briefs.sh" "$round"
+  assert_status 0
+  assert_contains "$(brief_for sleuth)" "skill\\ dir/save-report.sh $round sleuth"
 }
 
 test_briefs_quote_paths_with_spaces() {
@@ -661,6 +682,13 @@ test_save_report_rejects_an_unknown_lens() {
   assert_contains "$err" "unknown reviewer: nosuch"
 }
 
+test_save_report_rejects_the_full_agent_name() {
+  start_round_with_change
+  run_script "$save" "$round" code-review-sleuth </dev/null
+  assert_status 2
+  assert_contains "$err" "unknown reviewer: code-review-sleuth"
+}
+
 test_save_report_rejects_several_names_in_one() {
   start_round_with_change
   run_script "$save" "$round" "sleuth pedant" </dev/null
@@ -692,6 +720,16 @@ EOF
   run_script "$save" "$round" sleuth <"$work/report.md"
   assert_status 0
   assert_contains "$out" "5 findings (critical 2, high 1, medium 1, low 1)"
+}
+
+# A level followed by other words, decorated, or with trailing spaces still
+# counts by its first word.
+test_save_report_counts_a_decorated_severity_by_its_first_word() {
+  start_round_with_change
+  printf -- '- Severity: high (was medium)\n- Severity: **medium**\n- Severity: low  \n- Severity: high.\n' >"$work/report.md"
+  run_script "$save" "$round" sleuth <"$work/report.md"
+  assert_status 0
+  assert_contains "$out" "4 findings (critical 0, high 2, medium 1, low 1)"
 }
 
 test_save_report_replaces_an_earlier_report() {

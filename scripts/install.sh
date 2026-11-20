@@ -99,7 +99,7 @@ checksum() {
 
 # True if two directories hold the same files, contents and executable bits.
 same_tree() {
-  [ -n "$1" ] && [ -d "$1" ] && [ -d "$2" ] && [ "$(checksum "$1")" = "$(checksum "$2")" ]
+  [ -d "$1" ] && [ -d "$2" ] && [ "$(checksum "$1")" = "$(checksum "$2")" ]
 }
 
 # Prints the manifest entry for a skill as "kind<TAB>value", or nothing.
@@ -120,10 +120,11 @@ forget() {
   fi
 }
 
-# Records a skill in the manifest with its kind and value.
+# Records a skill in the manifest with its kind, its value and the source
+# directory it was installed from.
 record() {
   forget "$1"
-  printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$manifest"
+  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >>"$manifest"
 }
 
 # True if the destination is something this script installed and nobody has
@@ -166,6 +167,10 @@ is_our_copy() {
 
 done_count=0
 skipped_count=0
+# The names this run installed or found already installed, one per line.
+installed=""
+newline="
+"
 
 skip() {
   echo "  skipped  $1 ($2)" >&2
@@ -178,12 +183,14 @@ install_skill() {
   dest="$dest_dir/$name"
 
   if [ "$mode" = "link" ] && [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
-    record "$name" link "$src"
+    record "$name" link "$src" "$src"
+    installed="$installed$name$newline"
     echo "  ok       $name (already linked)"
     return 0
   fi
   if [ "$mode" = "copy" ] && [ -d "$dest" ] && [ ! -L "$dest" ] && same_tree "$src" "$dest"; then
-    record "$name" copy "$(checksum "$dest")"
+    record "$name" copy "$(checksum "$dest")" "$src"
+    installed="$installed$name$newline"
     echo "  ok       $name (already up to date)"
     return 0
   fi
@@ -204,56 +211,69 @@ install_skill() {
 
   if [ "$mode" = "link" ]; then
     ln -s "$src" "$dest"
-    record "$name" link "$src"
+    record "$name" link "$src" "$src"
     echo "  linked   $name"
   else
     cp -R "$src" "$dest"
-    record "$name" copy "$(checksum "$dest")"
+    record "$name" copy "$(checksum "$dest")" "$src"
     echo "  copied   $name"
   fi
+  installed="$installed$name$newline"
   done_count=$((done_count + 1))
 }
 
-# Prints the names the manifest records whose skill is no longer in this
-# repository, because it was removed or renamed.
+# Prints the names the manifest records as installed from this clone's
+# skills directory whose skill is no longer there, because it was removed or
+# renamed. Skills installed from another clone or worktree are left out.
 orphans() {
   local name
   if [ -f "$manifest" ]; then
-    awk -F'\t' '{ print $1 }' "$manifest" | while IFS= read -r name; do
-      if [ ! -f "$src_dir/$name/SKILL.md" ]; then
-        echo "$name"
-      fi
-    done
+    awk -F'\t' -v dir="$src_dir/" 'index($4, dir) == 1 { print $1 }' "$manifest" |
+      while IFS= read -r name; do
+        if [ ! -f "$src_dir/$name/SKILL.md" ]; then
+          echo "$name"
+        fi
+      done
   fi
 }
 
-# Removes an install of a skill that is no longer in this repository, if it
-# is still exactly what this script installed.
-remove_orphan() {
-  local name="$1" dest="$dest_dir/$1"
+# Removes the install of a skill if it is still exactly what this script
+# installed. The source is empty for a skill no longer in this repository.
+remove_install() {
+  local name="$1" src="$2" dest="$dest_dir/$1" note=""
+  if [ -z "$src" ]; then
+    note=" (no longer in this repository)"
+  fi
   if ! exists "$dest"; then
     forget "$name"
     return 0
   fi
-  if is_ours "" "$dest" "$name"; then
+  if is_ours "$src" "$dest" "$name"; then
     rm -rf "$dest"
     forget "$name"
-    echo "  removed  $name (no longer in this repository)"
+    echo "  removed  $name$note"
     if [ "$action" = "uninstall" ]; then
       done_count=$((done_count + 1))
     fi
   else
-    skip "$name" "no longer in this repository, but changed since it was installed"
+    skip "$name" "not installed by this script, or changed since$note"
   fi
 }
 
-# Prints a permission rule for each script the installed skills can run, by
-# its path through the skills directory and in this clone.
+remove_orphans() {
+  local name
+  while IFS= read -r name; do
+    remove_install "$name" ""
+  done < <(orphans)
+}
+
+# Prints a permission rule for each script the skills installed by this run
+# can run, by its path through the skills directory and in this clone.
 allow_rules() {
   local src name script
   for src in "${skills[@]}"; do
     name="$(basename "$src")"
-    if [ ! -d "$src/scripts" ]; then
+    if [ ! -d "$src/scripts" ] || ! printf '%s' "$installed" | grep -qxF "$name"; then
       continue
     fi
     find "$src/scripts" -type f | LC_ALL=C sort | while IFS= read -r script; do
@@ -264,34 +284,13 @@ allow_rules() {
   done
 }
 
-uninstall_skill() {
-  local src="$1" name dest
-  name="$(basename "$src")"
-  dest="$dest_dir/$name"
-
-  if ! exists "$dest"; then
-    forget "$name"
-    return 0
-  fi
-  if is_ours "$src" "$dest" "$name"; then
-    rm -rf "$dest"
-    forget "$name"
-    echo "  removed  $name"
-    done_count=$((done_count + 1))
-  else
-    skip "$name" "not installed by this script, or changed since"
-  fi
-}
-
 if [ "$action" = "install" ]; then
   mkdir -p "$dest_dir"
   echo "Installing skills into $dest_dir"
   for src in "${skills[@]}"; do
     install_skill "$src"
   done
-  while IFS= read -r name; do
-    remove_orphan "$name"
-  done < <(orphans)
+  remove_orphans
   echo "Installed $done_count, skipped $skipped_count."
   rules="$(allow_rules)"
   if [ -n "$rules" ]; then
@@ -307,11 +306,9 @@ else
   echo "Removing skills from $dest_dir"
   if [ -d "$dest_dir" ]; then
     for src in "${skills[@]}"; do
-      uninstall_skill "$src"
+      remove_install "$(basename "$src")" "$src"
     done
-    while IFS= read -r name; do
-      remove_orphan "$name"
-    done < <(orphans)
+    remove_orphans
   fi
   echo "Removed $done_count, skipped $skipped_count."
 fi

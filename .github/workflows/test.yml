@@ -36,5 +36,8 @@ jobs:
         run: |
           git config --global user.email ci@example.com
           git config --global user.name CI
+      - name: Check for jq
+        # The add-context tests skip without jq; in CI they must run.
+        run: command -v jq
       - name: Test with coverage
         run: tests/run.sh

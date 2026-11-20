@@ -35,7 +35,6 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 base_ref=""
 since=""
-root=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -74,7 +73,7 @@ top="$(git rev-parse --show-toplevel)"
 # diff settings - an external diff tool, colour, other path prefixes, diffs
 # relative to the current directory - must not apply.
 plain_diff() {
-  git diff --no-ext-diff --no-color --no-relative --src-prefix=a/ --dst-prefix=b/ "$@"
+  git -c diff.relative=false diff --no-ext-diff --no-color --src-prefix=a/ --dst-prefix=b/ "$@"
 }
 
 # Prints the default branch: origin/HEAD, else main or master, else nothing.
@@ -112,7 +111,6 @@ fi
 if [ -n "$since" ]; then
   base="$(crs_meta "$since" snapshot)"
   base_desc="snapshot of $(basename "$since")"
-  root="$(dirname "$since")"
 elif [ -z "$head" ]; then
   base="$(git hash-object -t tree /dev/null)"
   base_desc="empty tree (the repository has no commits)"
@@ -137,8 +135,8 @@ if plain_diff --quiet "$base" "$snapshot"; then
   exit 3
 fi
 
-if [ -n "$root" ]; then
-  : # --since put the new round next to the old one.
+if [ -n "$since" ]; then
+  root="$(dirname "$since")"
 elif [ -n "${CLAUDE_JOB_DIR:-}" ]; then
   root="$CLAUDE_JOB_DIR/tmp/code-review-swarm"
 else

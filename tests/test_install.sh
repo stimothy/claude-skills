@@ -96,6 +96,25 @@ test_prints_exact_rules_to_allow_skill_scripts() {
   assert_not_contains "$out" "/*/"
 }
 
+test_prints_the_rules_as_a_json_list() {
+  mkdir -p "$fixture/skills/beta/scripts"
+  printf '#!/bin/sh\n' >"$fixture/skills/beta/scripts/go.sh"
+  chmod +x "$fixture/skills/beta/scripts/go.sh"
+  run_install
+  assert_equals "$(printf '%s\n' "$out" | tail -n 4)" "$(
+    printf '  "Bash(%s *)",\n' "$dest/alpha/scripts/hi.sh" "$fixture/skills/alpha/scripts/hi.sh" "$dest/beta/scripts/go.sh"
+    printf '  "Bash(%s *)"' "$fixture/skills/beta/scripts/go.sh"
+  )"
+}
+
+test_rules_leave_out_a_skill_that_was_skipped() {
+  mkdir -p "$dest/alpha"
+  printf 'mine\n' >"$dest/alpha/SKILL.md"
+  run_install
+  assert_status 1
+  assert_not_contains "$out" "alpha/scripts/hi.sh"
+}
+
 test_rules_leave_out_sourced_libraries() {
   printf '# shellcheck shell=bash\n' >"$fixture/skills/alpha/scripts/lib.sh"
   run_install
@@ -307,6 +326,22 @@ test_uninstall_removes_a_skill_that_was_removed() {
   assert_absent "$dest/beta"
   assert_absent "$dest/alpha"
   assert_absent "$manifest"
+  assert_contains "$out" "Removed 2, skipped 0."
+}
+
+# Another clone or worktree that lacks a skill must not treat the skill this
+# clone installed as removed upstream.
+test_another_clone_leaves_skills_it_does_not_have() {
+  run_install
+  local other="$work/other/_cov_"
+  mkdir -p "$other/scripts" "$other/skills/alpha"
+  cp "$repo_root/scripts/install.sh" "$other/scripts/install.sh"
+  printf 'alpha skill\n' >"$other/skills/alpha/SKILL.md"
+  CLAUDE_CONFIG_DIR="$config" run_script "$other/scripts/install.sh"
+  assert_status 0
+  assert_link_to "$dest/beta" "$fixture/skills/beta"
+  CLAUDE_CONFIG_DIR="$config" run_script "$other/scripts/install.sh" --uninstall
+  assert_link_to "$dest/beta" "$fixture/skills/beta"
 }
 
 # --- Uninstalling ------------------------------------------------------------
